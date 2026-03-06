@@ -128,12 +128,13 @@ class DummyJobPopResponse:
 class ComfyUIBridge:
     """Bridge between AI Power Grid and a local ComfyUI installation."""
     
-    def __init__(self, worker_name, api_key, base_url=None, comfy_url=None, nsfw=False, threads=1, max_pixels=1048576, workflow_dir=None, workflow_file=None, grid_model=None):
+    def __init__(self, worker_name, api_key, base_url=None, comfy_url=None, ltx_desktop_url=None, nsfw=False, threads=1, max_pixels=1048576, workflow_dir=None, workflow_file=None, grid_model=None):
         """Initialize the bridge."""
         self.worker_name = worker_name
         self.api_key = api_key
         self.base_url = base_url or "https://api.aipowergrid.io/api"
         self.comfy_url = comfy_url or "http://127.0.0.1:8000"
+        self.ltx_desktop_url = ltx_desktop_url or "http://127.0.0.1:3000"
         self.nsfw = nsfw
         self.threads = threads
         self.max_pixels = max_pixels
@@ -173,6 +174,7 @@ class ComfyUIBridge:
         logger.info(f"Initialized bridge with worker name: {self.worker_name}")
         logger.info(f"Using API URL: {self.base_url}")
         logger.info(f"Using ComfyUI URL: {self.comfy_url}")
+        logger.info(f"Using LTX Desktop URL: {self.ltx_desktop_url}")
         logger.info(f"NSFW allowed: {self.nsfw}")
         logger.info(f"Workflows directory: {self.workflow_dir}")
         logger.info(f"Advertised models: {self.models}")
@@ -1654,6 +1656,7 @@ async def main():
     api_key = os.environ.get("GRID_API_KEY", "")
     worker_name = os.environ.get("GRID_WORKER_NAME", "ComfyUI-Bridge-Worker")
     comfy_url = os.environ.get("COMFYUI_URL", "http://127.0.0.1:8000")  # Default to port 8000
+    ltx_desktop_url = os.environ.get("LTX_DESKTOP_URL", "http://127.0.0.1:3000")  # LTX Desktop local server
     nsfw = os.environ.get("GRID_NSFW", "false").lower() == "true"
     threads = int(os.environ.get("GRID_THREADS", "1"))
     max_pixels = int(os.environ.get("GRID_MAX_PIXELS", "1048576"))
@@ -1671,6 +1674,8 @@ async def main():
         api_key=api_key,
         worker_name=worker_name,
         base_url=api_url,
+        comfy_url=comfy_url,
+        ltx_desktop_url=ltx_desktop_url,
         nsfw=nsfw,
         threads=threads,
         max_pixels=max_pixels,

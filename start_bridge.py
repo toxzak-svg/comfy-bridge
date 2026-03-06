@@ -67,6 +67,7 @@ async def main():
     api_key = os.environ.get("GRID_API_KEY", "")
     worker_name = os.environ.get("GRID_WORKER_NAME", "ComfyUI-Bridge-Worker")
     comfy_url = os.environ.get("COMFYUI_URL", "http://127.0.0.1:8000")  # Default to port 8000
+    ltx_desktop_url = os.environ.get("LTX_DESKTOP_URL", "http://127.0.0.1:3000")  # LTX Desktop local server
     nsfw = os.environ.get("GRID_NSFW", "false").lower() == "true"
     threads = int(os.environ.get("GRID_THREADS", "1"))
     max_pixels = int(os.environ.get("GRID_MAX_PIXELS", "1048576"))
@@ -96,6 +97,7 @@ async def main():
     print("Starting bridge with the following configuration:")
     print(f"- Worker name: {worker_name}")
     print(f"- ComfyUI URL: {comfy_url}")
+    print(f"- LTX Desktop URL: {ltx_desktop_url}")
     print(f"- API URL: {api_url}")
     print(f"- NSFW allowed: {nsfw}")
     print(f"- Concurrent threads: {threads}")
@@ -108,6 +110,7 @@ async def main():
             worker_name=worker_name,
             base_url=api_url,
             comfy_url=comfy_url,
+            ltx_desktop_url=ltx_desktop_url,
             nsfw=nsfw,
             threads=threads,
             max_pixels=max_pixels,
