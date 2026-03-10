@@ -1,0 +1,111 @@
+{
+  "_bridge": {
+    "version": 1,
+    "name": "LTX 2.3 T2V (MultiGPU + CreateVideo)",
+    "media_type": "video",
+    "supports_negative": true,
+    "nodes": {
+      "prompt": "3",
+      "negative_prompt": "4",
+      "sampler": "9",
+      "latent": "6",
+      "video_latent": "6",
+      "output": "12",
+      "checkpoint": "1",
+      "fps": "11"
+    },
+    "fields": {
+      "prompt": "text",
+      "negative_prompt": "text",
+      "seed": "seed",
+      "width": "width",
+      "height": "height",
+      "steps": "steps",
+      "cfg": "cfg",
+      "fps": "fps",
+      "ckpt_name": "ckpt_name"
+    }
+  },
+  "1": {
+    "inputs": {
+      "ckpt_name": "LTX-Video/ltx-2.3-22b-distilled.safetensors"
+    },
+    "class_type": "LTXV2CheckpointLoaderMultiGPU"
+  },
+  "2": {
+    "inputs": {
+      "text_encoder": "gemma-3-12b-it-qat-q4_0-unquantized/model-00001-of-00005.safetensors",
+      "ckpt_name": "LTX-Video/ltx-2.3-22b-distilled.safetensors"
+    },
+    "class_type": "LTXV2AVTextEncoderLoaderMultiGPU"
+  },
+  "3": {
+    "inputs": {
+      "text": "A cinematic shot of a person walking through a futuristic city with neon lights",
+      "clip": ["2", 0]
+    },
+    "class_type": "CLIPTextEncode"
+  },
+  "4": {
+    "inputs": {
+      "text": "",
+      "clip": ["2", 0]
+    },
+    "class_type": "CLIPTextEncode"
+  },
+  "5": {
+    "inputs": {
+      "positive": ["3", 0],
+      "negative": ["4", 0],
+      "frame_rate": 24.0
+    },
+    "class_type": "LTXVConditioning"
+  },
+  "6": {
+    "inputs": {
+      "width": 768,
+      "height": 512,
+      "length": 481,
+      "batch_size": 1
+    },
+    "class_type": "EmptyLTXVLatentVideo"
+  },
+  "9": {
+    "inputs": {
+      "seed": 42,
+      "steps": 16,
+      "cfg": 3.0,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1.0,
+      "model": ["1", 0],
+      "positive": ["5", 0],
+      "negative": ["5", 1],
+      "latent_image": ["6", 0]
+    },
+    "class_type": "KSampler"
+  },
+  "10": {
+    "inputs": {
+      "samples": ["9", 0],
+      "vae": ["1", 1]
+    },
+    "class_type": "VAEDecode"
+  },
+  "11": {
+    "inputs": {
+      "images": ["10", 0],
+      "fps": 24.0
+    },
+    "class_type": "CreateVideo"
+  },
+  "12": {
+    "inputs": {
+      "video": ["11", 0],
+      "filename_prefix": "aipg_ltx23",
+      "format": "auto",
+      "codec": "auto"
+    },
+    "class_type": "SaveVideo"
+  }
+}

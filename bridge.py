@@ -119,30 +119,38 @@ class DummyJobPopResponse:
                 self.seed = payload_data.get("seed", 0)
                 self.sampler = payload_data.get("sampler_name", "euler_ancestral")
                 self.use_nsfw_censor = payload_data.get("use_nsfw_censor", False)
-                # Video parameters
-                self.length = payload_data.get("length", 121)  # Number of frames
-                self.fps = payload_data.get("fps", 25)
+                # Video parameters (default 20s @ 24fps: 481 frames; LTX uses 8n+1)
+                self.length = payload_data.get("length", 481)
+                self.fps = payload_data.get("fps", 24)
         
         self.payload = Payload(kwargs.get("payload", {}))
 
 class ComfyUIBridge:
     """Bridge between AI Power Grid and a local ComfyUI installation."""
     
-    def __init__(self, worker_name, api_key, base_url=None, comfy_url=None, ltx_desktop_url=None, nsfw=False, threads=1, max_pixels=1048576, workflow_dir=None, workflow_file=None, grid_model=None):
+    def __init__(self, worker_name, api_key, base_url=None, comfy_url=None, ltx_desktop_url=None, nsfw=False, threads=1, max_pixels=1048576, workflow_dir=None, workflow_file=None, grid_model=None, workflow_video_file=None, grid_video_model=None, workflow_video_i2v_file=None, ltx_base_url=None, ltx_api_key=None, ltx_async=False):
         """Initialize the bridge."""
         self.worker_name = worker_name
         self.api_key = api_key
         self.base_url = base_url or "https://api.aipowergrid.io/api"
-        self.comfy_url = comfy_url or "http://127.0.0.1:8000"
+        self.comfy_url = comfy_url or "http://127.0.0.1:8188"
         self.ltx_desktop_url = ltx_desktop_url or "http://127.0.0.1:3000"
         self.nsfw = nsfw
         self.threads = threads
         self.max_pixels = max_pixels
         self.session = None
         self.logger = logging.getLogger(__name__)
+        # LTX API (optional): when set, video jobs use LTX-2.3 API instead of ComfyUI
+        self.ltx_base_url = (ltx_base_url or "").rstrip("/") if ltx_base_url else None
+        self.ltx_api_key = ltx_api_key or None
+        self.ltx_async = bool(ltx_async)
+        self.ltx_model = "ltx-2.3"
         
         # Set up models - if grid_model is specified, use only that model
         self.grid_model = grid_model
+        self.workflow_video_file = workflow_video_file
+        self.workflow_video_i2v_file = workflow_video_i2v_file
+        self.grid_video_model = grid_video_model if grid_video_model is not None else ("ltx-2.3" if workflow_video_file else None)
         if self.grid_model:
             self.models = [self.grid_model]
             logger.info(f"Using specified grid model: {self.grid_model}")
@@ -180,6 +188,8 @@ class ComfyUIBridge:
         logger.info(f"Advertised models: {self.models}")
         if self.workflow_file:
             logger.info(f"Using workflow file: {self.workflow_file}")
+        if self.ltx_base_url:
+            logger.info(f"LTX API enabled: {self.ltx_base_url} (async={self.ltx_async})")
         
         # Set up the Horde API client
         self.headers = {
@@ -190,8 +200,14 @@ class ComfyUIBridge:
         
         # Load the workflow if provided
         self.workflow_template = None
+        self.workflow_video_template = None
+        self.workflow_i2v_template = None
         if self.workflow_file:
             self._load_workflow_template()
+        if self.workflow_video_file:
+            self._load_video_workflow_template()
+        if self.workflow_video_i2v_file:
+            self._load_video_i2v_workflow_template()
     
     def _load_workflow_template(self):
         """Load workflow template from file. API format only."""
@@ -240,7 +256,69 @@ class ComfyUIBridge:
         except Exception as e:
             logger.error(f"Error loading workflow: {e}")
             self.workflow_template = None
-        
+
+    def _load_video_i2v_workflow_template(self):
+        """Load LTX image-to-video workflow template from file. API format only."""
+        if not self.workflow_video_i2v_file:
+            return
+        workflow_path = os.path.join(self.workflow_dir, self.workflow_video_i2v_file)
+        if not os.path.exists(workflow_path):
+            logger.error(f"Video I2V workflow file not found: {workflow_path}")
+            return
+        try:
+            with open(workflow_path, "r") as f:
+                self.workflow_i2v_template = json.load(f)
+            if not isinstance(self.workflow_i2v_template, dict):
+                logger.error("Video I2V workflow must be a JSON object (API format)")
+                self.workflow_i2v_template = None
+                return
+            if "nodes" in self.workflow_i2v_template and isinstance(self.workflow_i2v_template["nodes"], list):
+                logger.error("Video I2V workflow: Web UI format detected - export as API format instead!")
+                self.workflow_i2v_template = None
+                return
+            node_count = sum(1 for k in self.workflow_i2v_template if not k.startswith("_"))
+            logger.info(f"Loaded video I2V workflow: {workflow_path} ({node_count} nodes)")
+            if "_bridge" in self.workflow_i2v_template:
+                meta = self.workflow_i2v_template["_bridge"]
+                logger.info(f"  _bridge media_type: {meta.get('media_type', 'video')}, source_image: {'source_image' in meta.get('nodes', {})}")
+        except json.JSONDecodeError as e:
+            logger.error(f"Invalid JSON in video I2V workflow file: {e}")
+            self.workflow_i2v_template = None
+        except Exception as e:
+            logger.error(f"Error loading video I2V workflow: {e}")
+            self.workflow_i2v_template = None
+
+    def _load_video_workflow_template(self):
+        """Load LTX/video workflow template from file. API format only."""
+        if not self.workflow_video_file:
+            return
+        workflow_path = os.path.join(self.workflow_dir, self.workflow_video_file)
+        if not os.path.exists(workflow_path):
+            logger.error(f"Video workflow file not found: {workflow_path}")
+            return
+        try:
+            with open(workflow_path, "r") as f:
+                self.workflow_video_template = json.load(f)
+            if not isinstance(self.workflow_video_template, dict):
+                logger.error("Video workflow must be a JSON object (API format)")
+                self.workflow_video_template = None
+                return
+            if "nodes" in self.workflow_video_template and isinstance(self.workflow_video_template["nodes"], list):
+                logger.error("Video workflow: Web UI format detected - export as API format instead!")
+                self.workflow_video_template = None
+                return
+            node_count = sum(1 for k in self.workflow_video_template if not k.startswith("_"))
+            logger.info(f"Loaded video workflow: {workflow_path} ({node_count} nodes)")
+            if "_bridge" in self.workflow_video_template:
+                meta = self.workflow_video_template["_bridge"]
+                logger.info(f"  _bridge media_type: {meta.get('media_type', 'video')}")
+        except json.JSONDecodeError as e:
+            logger.error(f"Invalid JSON in video workflow file: {e}")
+            self.workflow_video_template = None
+        except Exception as e:
+            logger.error(f"Error loading video workflow: {e}")
+            self.workflow_video_template = None
+
     async def initialize_models(self):
         """Initialize available models."""
         logger.info("Initializing models from workflow template...")
@@ -248,6 +326,29 @@ class ComfyUIBridge:
         # Ensure workflow is loaded
         if not self.workflow_template and self.workflow_file:
             self._load_workflow_template()
+        if not self.workflow_video_template and self.workflow_video_file:
+            self._load_video_workflow_template()
+        if not self.workflow_i2v_template and self.workflow_video_i2v_file:
+            self._load_video_i2v_workflow_template()
+        
+        # Advertise video model(s) to grid when LTX video workflow is configured
+        if self.workflow_video_template and self.grid_video_model:
+            video_models = [self.grid_video_model] if isinstance(self.grid_video_model, str) else list(self.grid_video_model)
+            for m in video_models:
+                if m and m not in self.models:
+                    self.models.append(m)
+            logger.info(f"Video workflow configured; advertising video models: {video_models}")
+        # When LTX API URL is set (no ComfyUI video workflow), still advertise video model so grid sends video jobs
+        elif self.ltx_base_url:
+            video_name = self.grid_video_model if self.grid_video_model else self.ltx_model
+            if isinstance(video_name, list):
+                video_models = video_name
+            else:
+                video_models = [video_name]
+            for m in video_models:
+                if m and m not in self.models:
+                    self.models.append(m)
+            logger.info(f"LTX API configured; advertising video models: {video_models}")
                 
         logger.info(f"Available models: {self.models}")
                 
@@ -773,21 +874,27 @@ class ComfyUIBridge:
                 'media_type': expected_media_type,
             }
             
-            # Convert AI Power Grid job to ComfyUI workflow
-            workflow = self._convert_job_to_workflow(job)
-            
-            # Submit workflow to ComfyUI
-            prompt_id = await self._submit_workflow(workflow)
-            
-            # Wait for the generation to complete
-            result = await self._wait_for_generation(prompt_id)
-            
-            # Get the generated media (image or video)
-            media_data, media_type, filename = await self._get_generated_media(result)
-            logger.info(f"Generated {media_type}: {filename} ({len(media_data)} bytes)")
-            
-            # Submit the result back to the AI Power Grid
-            await self._submit_result(job_id, media_data, media_type=media_type)
+            # LTX path: when LTX API URL is set and job is video, use LTX-2.3 API instead of ComfyUI
+            if self.ltx_base_url and expected_media_type == "video":
+                ltx_payload = self._job_to_ltx_payload(job)
+                image_uri = None
+                if source_processing in ("img2video", "img2vid") and job.source_image:
+                    logger.info("Uploading source image to LTX for I2V...")
+                    image_uri = await self._upload_source_image_to_ltx(job.source_image)
+                if self.ltx_async:
+                    media_data = await self._run_ltx_async(job, ltx_payload, image_uri)
+                else:
+                    media_data = await self._run_ltx_sync(job, ltx_payload, image_uri)
+                logger.info(f"Generated video via LTX ({len(media_data)} bytes)")
+                await self._submit_result(job_id, media_data, media_type="video")
+            else:
+                # ComfyUI path
+                workflow = self._convert_job_to_workflow(job)
+                prompt_id = await self._submit_workflow(workflow)
+                result = await self._wait_for_generation(prompt_id)
+                media_data, media_type, filename = await self._get_generated_media(result)
+                logger.info(f"Generated {media_type}: {filename} ({len(media_data)} bytes)")
+                await self._submit_result(job_id, media_data, media_type=media_type)
             
             # Track stats
             self.jobs_completed += 1
@@ -812,19 +919,37 @@ class ComfyUIBridge:
     
     def _convert_job_to_workflow(self, job: DummyJobPopResponse) -> Dict[str, Any]:
         """Convert an AI Power Grid job to a ComfyUI workflow using a workflow template file."""
-        # If we have a loaded workflow template, use it
+        # Video jobs: use LTX video template (T2V or I2V) when configured
+        media_type = getattr(job, "media_type", None) or "image"
+        source_processing = getattr(job, "source_processing", None) or "txt2img"
+        if media_type == "video":
+            # Image-to-video: use I2V template when job has source image and I2V workflow is set
+            if source_processing in ("img2video", "img2vid") and job.source_image:
+                if self.workflow_i2v_template:
+                    template = self.workflow_i2v_template
+                    logger.info(f"Using video I2V (LTX) workflow template for job with model {job.model}")
+                else:
+                    logger.error("Image-to-video job received but no LTX I2V workflow configured (set WORKFLOW_LTX_I2V_FILE)")
+                    raise ValueError("Image-to-video job received but no LTX I2V workflow configured. Set WORKFLOW_LTX_I2V_FILE and use a workflow with _bridge source_image.")
+            elif self.workflow_video_template:
+                template = self.workflow_video_template
+                logger.info(f"Using video (LTX T2V) workflow template for job with model {job.model}")
+            else:
+                logger.error("Video job received but no LTX video workflow configured (set WORKFLOW_LTX_FILE)")
+                raise ValueError("Video job received but no LTX video workflow configured. Set WORKFLOW_LTX_FILE and use a workflow with _bridge media_type 'video'.")
+            if "_bridge" in template:
+                return self._update_workflow_with_metadata(template, job)
+            return self._update_workflow_legacy(template, job)
+        
+        # Image jobs: use main workflow template
         if self.workflow_template:
             logger.info(f"Using loaded workflow template for job with model {job.model}")
-            
-            # Check if workflow has _bridge metadata (new clean format)
             if "_bridge" in self.workflow_template:
                 logger.info("Using new _bridge metadata format")
                 return self._update_workflow_with_metadata(self.workflow_template, job)
-            else:
-                logger.info("Using legacy workflow detection")
-                return self._update_workflow_legacy(self.workflow_template, job)
+            logger.info("Using legacy workflow detection")
+            return self._update_workflow_legacy(self.workflow_template, job)
         
-        # Otherwise fall back to default workflow
         logger.warning(f"No workflow template loaded, falling back to default workflow for {job.model}")
         return self._create_default_workflow(job)
     
@@ -932,6 +1057,14 @@ class ComfyUIBridge:
                 w[latent_node_id]["inputs"][height_field] = job.payload.height
             logger.info(f"Set dimensions in node {latent_node_id}: {job.payload.width}x{job.payload.height}")
         
+        # === CHECKPOINT (optional: overwrite from job.model) ===
+        checkpoint_node_id = nodes.get("checkpoint")
+        ckpt_field = fields.get("ckpt_name", "ckpt_name")
+        if checkpoint_node_id and checkpoint_node_id in w and job.model:
+            model_filename = map_model_name(job.model)
+            w[checkpoint_node_id]["inputs"][ckpt_field] = model_filename
+            logger.info(f"Set checkpoint in node {checkpoint_node_id}: {model_filename}")
+        
         # === OUTPUT FILENAME ===
         output_node_id = nodes.get("output")
         if output_node_id and output_node_id in w:
@@ -949,9 +1082,21 @@ class ComfyUIBridge:
         # === VIDEO PARAMS ===
         video_latent_node_id = nodes.get("video_latent")
         if video_latent_node_id and video_latent_node_id in w:
-            if hasattr(job.payload, 'length') and job.payload.length:
+            if hasattr(job.payload, "length") and job.payload.length:
                 w[video_latent_node_id]["inputs"]["length"] = job.payload.length
                 logger.info(f"Set video length: {job.payload.length} frames")
+        
+        # === FPS (video) ===
+        fps_node_id = nodes.get("fps")
+        fps_field = fields.get("fps", "frame_rate")
+        if meta.get("media_type") == "video" and fps_node_id and fps_node_id in w:
+            if hasattr(job.payload, "fps") and job.payload.fps is not None:
+                try:
+                    fps_val = float(job.payload.fps)
+                    w[fps_node_id]["inputs"][fps_field] = fps_val
+                    logger.info(f"Set FPS in node {fps_node_id}: {fps_val}")
+                except (ValueError, TypeError):
+                    pass
         
         logger.info(f"Workflow updated via _bridge metadata ({len(w)} nodes)")
         return w
@@ -1650,12 +1795,146 @@ class ComfyUIBridge:
             logger.error(f"Error uploading source image to ComfyUI: {e}")
             raise
 
+    def _job_to_ltx_payload(self, job: DummyJobPopResponse) -> Dict[str, Any]:
+        """Build LTX API request payload from a Grid job. Used for both T2V and I2V (image_uri added separately)."""
+        p = job.payload
+        length = getattr(p, "length", None) or 481
+        fps = getattr(p, "fps", None) or 24
+        duration_sec = length / fps if fps else (length / 25)
+        width = getattr(p, "width", None) or 1280
+        height = getattr(p, "height", None) or 720
+        resolution = f"{width}x{height}"
+        prompt_text = (p.prompt or "").split("###")[0].strip()
+        payload = {
+            "prompt": prompt_text,
+            "model": self.ltx_model,
+            "resolution": resolution,
+            "duration": duration_sec,
+            "fps": fps,
+            "generate_audio": False,
+        }
+        if hasattr(p, "seed") and p.seed is not None:
+            try:
+                payload["seed"] = int(p.seed)
+            except (ValueError, TypeError):
+                pass
+        return payload
+
+    async def _upload_source_image_to_ltx(self, source_image_base64: str) -> str:
+        """Upload base64 source image to LTX API; return storage_uri for I2V."""
+        try:
+            image_data = base64.b64decode(source_image_base64)
+        except Exception as e:
+            logger.error(f"Failed to decode source image for LTX upload: {e}")
+            raise
+        headers = {}
+        if self.ltx_api_key:
+            headers["Authorization"] = f"Bearer {self.ltx_api_key}"
+        async with self.session.post(
+            f"{self.ltx_base_url}/v1/upload",
+            headers=headers,
+            timeout=aiohttp.ClientTimeout(total=30),
+        ) as resp:
+            if resp.status != 200:
+                text = await resp.text()
+                raise RuntimeError(f"LTX upload init failed ({resp.status}): {text[:500]}")
+            data = await resp.json()
+        upload_url = data.get("upload_url")
+        storage_uri = data.get("storage_uri")
+        required_headers = data.get("required_headers") or {}
+        if not upload_url or not storage_uri:
+            raise RuntimeError("LTX upload response missing upload_url or storage_uri")
+        put_headers = {"Content-Type": "image/png", **required_headers}
+        async with self.session.put(upload_url, data=image_data, headers=put_headers, timeout=aiohttp.ClientTimeout(total=300)) as put_resp:
+            if put_resp.status not in (200, 201):
+                text = await put_resp.text()
+                raise RuntimeError(f"LTX image upload failed ({put_resp.status}): {text[:500]}")
+        return storage_uri
+
+    def _ltx_headers(self) -> Dict[str, str]:
+        """Headers for LTX API requests."""
+        h = {"Content-Type": "application/json"}
+        if self.ltx_api_key:
+            h["Authorization"] = f"Bearer {self.ltx_api_key}"
+        return h
+
+    async def _run_ltx_sync(self, job: DummyJobPopResponse, ltx_payload: Dict[str, Any], image_uri: Optional[str]) -> bytes:
+        """Call LTX API synchronously (long POST); return video bytes."""
+        if image_uri:
+            url = f"{self.ltx_base_url}/v1/image-to-video"
+            payload = {**ltx_payload, "image_uri": image_uri}
+        else:
+            url = f"{self.ltx_base_url}/v1/text-to-video"
+            payload = ltx_payload
+        timeout = aiohttp.ClientTimeout(total=1200)
+        async with self.session.post(url, json=payload, headers=self._ltx_headers(), timeout=timeout) as resp:
+            if resp.status != 200:
+                text = await resp.text()
+                raise RuntimeError(f"LTX API error: {resp.status} {text[:500]}")
+            content_type = (resp.headers.get("Content-Type") or "").lower()
+            if "video" in content_type or "octet-stream" in content_type:
+                body = await resp.read()
+                if not body:
+                    raise RuntimeError("LTX API returned empty video body")
+                return body
+            data = await resp.json()
+        video_url = (
+            data.get("video_url")
+            or data.get("output_video")
+            or (data.get("result") or {}).get("video_url")
+            or (data.get("result") or {}).get("output_video")
+        )
+        if not video_url:
+            raise RuntimeError("LTX API response did not contain video_url or video body")
+        async with self.session.get(video_url, headers=self._ltx_headers() if self.ltx_api_key else {}, timeout=aiohttp.ClientTimeout(total=120)) as dl:
+            if dl.status != 200:
+                raise RuntimeError(f"Failed to download LTX video: {dl.status}")
+            body = await dl.read()
+            if not body:
+                raise RuntimeError("Downloaded LTX video is empty")
+            return body
+
+    async def _run_ltx_async(self, job: DummyJobPopResponse, ltx_payload: Dict[str, Any], image_uri: Optional[str]) -> bytes:
+        """Call LTX API asynchronously (POST task_id, poll status, fetch result); return video bytes."""
+        if image_uri:
+            url = f"{self.ltx_base_url}/v1/image-to-video"
+            payload = {**ltx_payload, "image_uri": image_uri}
+        else:
+            url = f"{self.ltx_base_url}/v1/text-to-video"
+            payload = ltx_payload
+        async with self.session.post(url, json=payload, headers=self._ltx_headers(), timeout=aiohttp.ClientTimeout(total=60)) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
+        task_id = data.get("task_id") or data.get("job_id") or data.get("id")
+        if not task_id:
+            raise RuntimeError("LTX async API did not return task_id/job_id")
+        status_url = f"{self.ltx_base_url}/v1/video/status/{task_id}"
+        while True:
+            async with self.session.get(status_url, headers=self._ltx_headers(), timeout=aiohttp.ClientTimeout(total=10)) as status_resp:
+                status_resp.raise_for_status()
+                status_data = await status_resp.json()
+            status = (status_data.get("status") or "").upper()
+            if status == "SUCCESS":
+                result_url = status_data.get("result_url") or status_data.get("video_url") or status_data.get("result", {}).get("video_url")
+                if result_url:
+                    async with self.session.get(result_url, headers=self._ltx_headers() if self.ltx_api_key else {}, timeout=aiohttp.ClientTimeout(total=120)) as r:
+                        r.raise_for_status()
+                        return await r.read()
+                result_endpoint = f"{self.ltx_base_url}/v1/video/result/{task_id}"
+                async with self.session.get(result_endpoint, headers=self._ltx_headers(), timeout=aiohttp.ClientTimeout(total=120)) as res:
+                    res.raise_for_status()
+                    return await res.read()
+            if status == "FAILED":
+                err = status_data.get("error") or status_data.get("message") or "LTX job failed"
+                raise RuntimeError(str(err))
+            await asyncio.sleep(5)
+
 async def main():
     """Main entry point for the bridge."""
     # Get configuration from environment variables or use defaults
     api_key = os.environ.get("GRID_API_KEY", "")
     worker_name = os.environ.get("GRID_WORKER_NAME", "ComfyUI-Bridge-Worker")
-    comfy_url = os.environ.get("COMFYUI_URL", "http://127.0.0.1:8000")  # Default to port 8000
+    comfy_url = os.environ.get("COMFYUI_URL", "http://127.0.0.1:8188")  # ComfyUI default port
     ltx_desktop_url = os.environ.get("LTX_DESKTOP_URL", "http://127.0.0.1:3000")  # LTX Desktop local server
     nsfw = os.environ.get("GRID_NSFW", "false").lower() == "true"
     threads = int(os.environ.get("GRID_THREADS", "1"))

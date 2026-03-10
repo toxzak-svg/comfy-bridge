@@ -27,27 +27,32 @@ This allows you to contribute GPU cycles to a decentralized AI rendering network
 
 1. **Python 3.9+**  
 2. **ComfyUI** running locally (default: `http://127.0.0.1:8000`).  
-3. **AI Power Grid** account + API key: https://dashboard.aipowergrid.io  
+3. **AI Power Grid** account + API key from https://dashboard.aipowergrid.io (this bridge uses AI Power Grid, not Stable Horde — use the key from the AI Power Grid dashboard).  
 
 ---
 
 ## 📦 Installation
 
+**On Debian/Ubuntu**, install venv and pip first (one-time):
+
 ```bash
-# 1. Clone the repo
-git clone https://github.com/youruser/comfy-bridge.git
+sudo apt update
+sudo apt install python3.12-venv python3-pip
+```
+
+Then set up the project:
+
+```bash
+# 1. Clone the repo (or cd into your existing clone)
 cd comfy-bridge
 
 # 2. Create & activate a virtual environment
-python -m venv venv
-# macOS/Linux
-source venv/bin/activate
-# Windows
-venv\Scripts\activate
+python3 -m venv .venv
+source .venv/bin/activate
 
 # 3. Install dependencies
-pip install -e .
-````
+pip install -r requirements.txt
+```
 
 ---
 
@@ -70,6 +75,50 @@ WORKFLOW_FILE=my_workflow.json               # ComfyUI JSON export template
 
 * **`GRID_MODEL`** supports one or more model keys (comma-separated). If unset, the bridge auto-detects from your ComfyUI checkpoints.
 * **`WORKFLOW_FILE`** points to a JSON workflow in your `workflows/` directory.
+* **`WORKFLOW_LTX_FILE`** (optional) — LTX 2.3 **text-to-video** workflow JSON (e.g. `ltx_2_3_t2v.json`). When set, video jobs use this workflow. See [LTX 2.3 on this GPU rig](#ltx-23-on-this-gpu-rig) below.
+* **`WORKFLOW_LTX_I2V_FILE`** (optional) — LTX 2.3 **image-to-video** workflow (e.g. `ltx_2_3_i2v_createvideo_multigpu_comfyorg.json`). When set, video jobs that include a source image use this I2V workflow; the workflow must have `_bridge` with `source_image` node.
+* **`GRID_VIDEO_MODEL`** (optional) — Video model name(s) to advertise (e.g. `ltx-2.3`). If unset and `WORKFLOW_LTX_FILE` is set, defaults to `ltx-2.3`.
+
+---
+
+## LTX 2.3 on this GPU rig
+
+You can run **LTX 2.3** video jobs on this machine by using ComfyUI with [ComfyUI-LTXVideo](https://github.com/Lightricks/ComfyUI-LTXVideo) and configuring the bridge to use an LTX 2.3 workflow for video jobs.
+
+**Prerequisites**
+
+- ComfyUI with the [ComfyUI-LTXVideo](https://github.com/Lightricks/ComfyUI-LTXVideo) custom nodes.
+- LTX 2.3 models (e.g. Gemma text encoder, VAEs, checkpoints, optional distilled LoRA) — see [LTX ComfyUI docs](https://docs.ltx.video/open-source-model/integration-tools/comfy-ui). On this rig you can use `ComfyUI/download_ltx_supporting_models.py` to fetch supporting models.
+
+**Configuration**
+
+1. Export your LTX 2.3 workflow from ComfyUI in **API format**: Dev Mode → Save (API Format). Place it under `workflows/` (e.g. `workflows/ltx_2_3_t2v.json`).
+2. Add a **`_bridge`** section to the workflow JSON so the bridge can inject job parameters. Include at least: `nodes` (e.g. `prompt`, `sampler`, `video_latent`, `output`, optionally `checkpoint`, `fps`), `fields`, `supports_negative`, and `media_type: "video"`.
+3. In `.env` set:
+   - `WORKFLOW_LTX_FILE=ltx_2_3_t2v.json` (or your filename)
+   - Optionally `GRID_VIDEO_MODEL=ltx-2.3` (defaults to `ltx-2.3` when the LTX workflow is set)
+
+**Behavior**
+
+- One ComfyUI instance and one bridge process run on this machine. The bridge connects to `COMFYUI_URL` and can serve both image and video jobs.
+- For **image** jobs the bridge uses `WORKFLOW_FILE` (image workflow). For **video** jobs (grid sends `media_type: "video"`) it uses `WORKFLOW_LTX_FILE` (LTX 2.3 T2V) or `WORKFLOW_LTX_I2V_FILE` (I2V when job has source image). If a video job arrives and no LTX workflow is configured, the bridge fails the job with a clear error.
+- The bridge sets `length` and `fps` from the job payload into the video latent and FPS nodes when the workflow’s `_bridge` defines them.
+
+**CLI**
+
+```bash
+python start_bridge.py --workflow turbovision.json --workflow-ltx ltx_2_3_t2v.json --workflow-ltx-i2v ltx_2_3_i2v.json --grid-video-model ltx-2.3
+```
+
+To run **LTX 2.3 image-to-video locally** (no grid): ensure ComfyUI is running with ComfyUI-LTXVideo and ComfyUI-VideoHelperSuite, then:
+
+```bash
+python run_ltx23_i2v_local.py --image path/to/image.png --prompt "Smooth motion, wind in the trees" --out my_video.mp4
+```
+
+**Docker**
+
+Use the same `workflows/` mount and set `WORKFLOW_LTX_FILE` and `GRID_VIDEO_MODEL` in your env; no Dockerfile change is required unless you add extra dependencies for LTX.
 
 ---
 
@@ -82,10 +131,17 @@ Start your ComfyUI web server, then:
 python -m comfy_bridge.cli
 ```
 
-Or directly (legacy):
+Or with the run script (enables LTX video if `workflows/ltx_2_3_t2v.json` exists):
 
 ```bash
-start_bridge.py
+chmod +x run_bridge.sh
+./run_bridge.sh
+```
+
+Or directly:
+
+```bash
+python3 start_bridge.py
 ```
 
 The bridge will:
@@ -147,13 +203,28 @@ Build & run:
 
 ## ✅ Testing
 
-All core modules include unit and async tests. To run them:
+Tests follow pytest best practices: fixtures in `conftest.py`, unit tests in `tests/`, and integration tests marked with `@pytest.mark.integration`.
+
+**Run unit tests only** (no ComfyUI/network required):
 
 ```bash
-pytest
+pip install -r requirements.txt
+pytest tests/ -v -m "not integration"
 ```
 
-Tests use `pytest-asyncio` for async routines and `respx` for HTTP mocking.
+**Run all tests including integration** (requires ComfyUI at `COMFYUI_URL`):
+
+```bash
+pytest tests/ -v
+```
+
+**Legacy script** (runs pytest on `tests/` if pytest is installed):
+
+```bash
+python3 test_bridge_logic.py
+```
+
+Tests use `pytest-asyncio` for async tests and shared fixtures for bridge/job data.
 
 ---
 
@@ -162,7 +233,7 @@ Tests use `pytest-asyncio` for async routines and `respx` for HTTP mocking.
 * **No jobs found?** Check `Advertising models:` log; ensure `GRID_MODEL` is set or your checkpoints match default mappings.
 * **400 Bad Request**: unrecognized models—verify model key names or adjust `GRID_MODEL`.
 * **ComfyUI unreachable**: confirm `COMFYUI_URL` and that the server is running.
-* **API auth errors**: verify `GRID_API_KEY` and network access.
+* **API auth errors** / "No user matching sent API Key": use an **AI Power Grid** API key from https://dashboard.aipowergrid.io — keys from Stable Horde (stablehorde.net) are for a different service and will not work.
 
 Logs are printed at INFO (bridge flow) and DEBUG (detailed payloads) levels. Adjust via:
 

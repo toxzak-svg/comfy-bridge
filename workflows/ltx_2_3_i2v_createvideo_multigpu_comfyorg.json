@@ -1,0 +1,125 @@
+{
+  "_bridge": {
+    "version": 1,
+    "name": "LTX 2.3 I2V (MultiGPU + Comfy-Org Gemma)",
+    "media_type": "video",
+    "supports_negative": true,
+    "nodes": {
+      "prompt": "3",
+      "negative_prompt": "4",
+      "sampler": "9",
+      "video_latent": "6",
+      "output": "12",
+      "checkpoint": "1",
+      "fps": "11",
+      "source_image": "7"
+    },
+    "fields": {
+      "prompt": "text",
+      "negative_prompt": "text",
+      "seed": "seed",
+      "steps": "steps",
+      "cfg": "cfg",
+      "fps": "fps",
+      "ckpt_name": "ckpt_name"
+    }
+  },
+  "1": {
+    "inputs": {
+      "ckpt_name": "LTX-Video/ltx-2.3-22b-distilled.safetensors"
+    },
+    "class_type": "LTXV2CheckpointLoaderMultiGPU"
+  },
+  "2": {
+    "inputs": {
+      "text_encoder": "gemma_3_12B_it_fp4_mixed.safetensors",
+      "ckpt_name": "LTX-Video/ltx-2.3-22b-distilled.safetensors"
+    },
+    "class_type": "LTXV2AVTextEncoderLoaderMultiGPU"
+  },
+  "3": {
+    "inputs": {
+      "text": "Smooth motion, subtle movement, cinematic",
+      "clip": ["2", 0]
+    },
+    "class_type": "CLIPTextEncode"
+  },
+  "4": {
+    "inputs": {
+      "text": "",
+      "clip": ["2", 0]
+    },
+    "class_type": "CLIPTextEncode"
+  },
+  "5": {
+    "inputs": {
+      "positive": ["3", 0],
+      "negative": ["4", 0],
+      "frame_rate": 24.0
+    },
+    "class_type": "LTXVConditioning"
+  },
+  "6": {
+    "inputs": {
+      "width": 768,
+      "height": 512,
+      "length": 480,
+      "batch_size": 1
+    },
+    "class_type": "EmptyLTXVLatentVideo"
+  },
+  "7": {
+    "inputs": {
+      "image": "input.png"
+    },
+    "class_type": "LoadImage"
+  },
+  "8": {
+    "inputs": {
+      "strength": 1,
+      "bypass": false,
+      "vae": ["1", 1],
+      "image": ["7", 0],
+      "latent": ["6", 0]
+    },
+    "class_type": "LTXVImgToVideoInplace"
+  },
+  "9": {
+    "inputs": {
+      "seed": 42,
+      "steps": 20,
+      "cfg": 3.0,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1.0,
+      "model": ["1", 0],
+      "positive": ["5", 0],
+      "negative": ["5", 1],
+      "latent_image": ["8", 0]
+    },
+    "class_type": "KSampler"
+  },
+  "10": {
+    "inputs": {
+      "samples": ["9", 0],
+      "vae": ["1", 1]
+    },
+    "class_type": "VAEDecode"
+  },
+  "11": {
+    "inputs": {
+      "images": ["10", 0],
+      "fps": 24.0
+    },
+    "class_type": "CreateVideo"
+  },
+  "12": {
+    "inputs": {
+      "video": ["11", 0],
+      "filename_prefix": "aipg_ltx23_i2v",
+      "format": "auto",
+      "codec": "auto"
+    },
+    "class_type": "SaveVideo"
+  }
+}

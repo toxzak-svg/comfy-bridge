@@ -58,15 +58,19 @@ async def main():
     parser = argparse.ArgumentParser(description='Start ComfyUI bridge')
     parser.add_argument('--workflow', '-w', help='Workflow JSON file to use from workflows directory')
     parser.add_argument('--grid-model', help='Model to advertise to the grid (overrides GRID_MODEL in .env)')
+    parser.add_argument('--workflow-ltx', help='LTX 2.3 video (T2V) workflow JSON (e.g. ltx_2_3_t2v.json)')
+    parser.add_argument('--workflow-ltx-i2v', help='LTX 2.3 image-to-video workflow JSON (e.g. ltx_2_3_i2v.json)')
+    parser.add_argument('--grid-video-model', help='Video model name(s) to advertise (e.g. ltx-2.3)')
     args = parser.parse_args()
     
-    # Load environment variables from .env file
+    # Load environment variables: home .env first (e.g. AIPG_API_KEY), then local .env
+    load_dotenv(os.path.expanduser("~/.env"))
     load_dotenv()
     
-    # Get configuration from environment variables or use defaults
-    api_key = os.environ.get("GRID_API_KEY", "")
+    # Get configuration from environment variables or use defaults (prefer AIPG_API_KEY for job worker)
+    api_key = os.environ.get("AIPG_API_KEY") or os.environ.get("GRID_API_KEY", "")
     worker_name = os.environ.get("GRID_WORKER_NAME", "ComfyUI-Bridge-Worker")
-    comfy_url = os.environ.get("COMFYUI_URL", "http://127.0.0.1:8000")  # Default to port 8000
+    comfy_url = os.environ.get("COMFYUI_URL", "http://127.0.0.1:8188")  # ComfyUI default port
     ltx_desktop_url = os.environ.get("LTX_DESKTOP_URL", "http://127.0.0.1:3000")  # LTX Desktop local server
     nsfw = os.environ.get("GRID_NSFW", "false").lower() == "true"
     threads = int(os.environ.get("GRID_THREADS", "1"))
@@ -80,6 +84,16 @@ async def main():
     # Use command line argument for grid model if provided, otherwise use environment variable
     grid_model = args.grid_model or os.environ.get("GRID_MODEL")
     
+    # LTX 2.3 video: T2V workflow (default multi-GPU), optional I2V workflow, and model to advertise
+    workflow_video_file = args.workflow_ltx or os.environ.get("WORKFLOW_LTX_FILE") or "ltx_2_3_t2v_multigpu.json"
+    workflow_video_i2v_file = args.workflow_ltx_i2v or os.environ.get("WORKFLOW_LTX_I2V_FILE")
+    grid_video_model = args.grid_video_model or os.environ.get("GRID_VIDEO_MODEL")
+    
+    # LTX API (optional): when set, video jobs use LTX-2.3 HTTP API instead of ComfyUI
+    ltx_base_url = os.environ.get("LTX_API_URL", "").strip() or None
+    ltx_api_key = os.environ.get("LTX_API_KEY", "").strip() or None
+    ltx_async = os.environ.get("LTX_ASYNC", "false").lower() == "true"
+    
     if not api_key:
         print("Error: GRID_API_KEY environment variable is required")
         sys.exit(1)
@@ -88,6 +102,15 @@ async def main():
         print(f"Using workflow file: {workflow_file}")
     else:
         print("No workflow file specified. Using default workflow.")
+    
+    if workflow_video_file:
+        print(f"Using LTX video (T2V) workflow: {workflow_video_file}")
+    if workflow_video_i2v_file:
+        print(f"Using LTX image-to-video workflow: {workflow_video_i2v_file}")
+    if grid_video_model:
+        print(f"Advertising video model(s) to grid: {grid_video_model}")
+    if ltx_base_url:
+        print(f"LTX API enabled: {ltx_base_url} (async={ltx_async})")
         
     if grid_model:
         print(f"Advertising model to grid: {grid_model}")
@@ -116,7 +139,13 @@ async def main():
             max_pixels=max_pixels,
             workflow_dir=workflow_dir,
             workflow_file=workflow_file,
-            grid_model=grid_model
+            grid_model=grid_model,
+            workflow_video_file=workflow_video_file,
+            grid_video_model=grid_video_model,
+            workflow_video_i2v_file=workflow_video_i2v_file,
+            ltx_base_url=ltx_base_url,
+            ltx_api_key=ltx_api_key,
+            ltx_async=ltx_async,
         )
         
         # Start the bridge

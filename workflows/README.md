@@ -38,6 +38,18 @@ The repository includes several pre-made templates:
 - `sdxl_turbo_workflow.json` - For SDXL Turbo (optimized parameters)
 - `turbovision.json` - For TurboVision XL
 - `sdxl-lightning.json` - For SDXL Lightning
+- `ltx_2_3_t2v.json` - LTX 2.3 text-to-video (fp8, 20s default, single-GPU)
+- `ltx_2_3_t2v_multigpu.json` - LTX 2.3 text-to-video (distilled, 20s, **dual-GPU**, default for T2V)
+- `ltx_2_3_i2v_createvideo_multigpu.json` - LTX 2.3 image-to-video (multi-GPU, 20s)
+
+### LTX 2.3: speed and dual-GPU
+
+- **20s videos**: Default is 481 frames @ 24 fps (LTX uses frame count `8n+1`). Override via job `length` / `fps`.
+- **Faster without hurting quality**: T2V uses 16 steps; keep scheduler `simple`. Avoid going below ~14 steps for quality.
+- **Dual-GPU (default)**:  
+  - **T2V**: Default workflow is `ltx_2_3_t2v_multigpu.json` (uses `LTXV2CheckpointLoaderMultiGPU` + distilled checkpoint + Gemma text encoder). Start ComfyUI **without** `--cuda-device` so both GPUs are visible.  
+  - **I2V**: `ltx_2_3_i2v_createvideo_multigpu.json` uses the same multi-GPU loaders.  
+  Single-GPU T2V: set `WORKFLOW_LTX_FILE=ltx_2_3_t2v.json` (fp8 checkpoint).
 
 ## How to Get a Workflow File
 

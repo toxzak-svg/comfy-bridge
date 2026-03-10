@@ -65,7 +65,12 @@ class ModelMapper:
         "juggernaut_xl": "juggernaut_xl.safetensors",
         "playground_v2": "playground_v2.safetensors",
         "dreamshaper_8": "dreamshaper_8.safetensors",
-        "stable_diffusion": "v1-5-pruned-emaonly.safetensors"
+        "stable_diffusion": "v1-5-pruned-emaonly.safetensors",
+        # LTX 2.3 (ComfyUI-LTXVideo; Kijai/LTX2.3_comfy, Lightricks/LTX-2.3)
+        # I2V/T2V use the distilled checkpoint; path may be under LTX-Video/
+        "ltx-2.3": "LTX-Video/ltx-2.3-22b-distilled.safetensors",
+        "ltx-2.3-distilled": "LTX-Video/ltx-2.3-22b-distilled.safetensors",
+        "ltx_2_3": "LTX-Video/ltx-2.3-22b-distilled.safetensors",
     }
     
     def __init__(self):
@@ -100,6 +105,11 @@ class ModelMapper:
         # Reset the model map
         self.model_map = {}
         
+        # Apply default mappings for models we have (so LTX 2.3 etc. work without filename patterns)
+        for horde_name, local_name in self.DEFAULT_MODEL_MAP.items():
+            if local_name in self.available_models:
+                self.model_map[horde_name] = local_name
+        
         # Loop through available models and map them to AI Power Grid model names
         for model_filename in self.available_models:
             lower_filename = model_filename.lower()
@@ -120,6 +130,15 @@ class ModelMapper:
             
             elif "v2-1" in lower_filename or "v2.1" in lower_filename or "sd2.1" in lower_filename:
                 self.model_map["stable_diffusion_2.1"] = model_filename
+            
+            # LTX 2.3: Kijai/LTX2.3_comfy, Lightricks/LTX-2.3 checkpoints and LoRAs
+            elif "ltx-2.3" in lower_filename or "ltx2.3" in lower_filename or "ltx_2_3" in lower_filename:
+                self.model_map["ltx-2.3"] = model_filename
+                self.model_map["ltx_2_3"] = model_filename
+                if "distilled" in lower_filename and "lora" in lower_filename:
+                    self.model_map["ltx-2.3-distilled"] = model_filename
+                elif "distilled" in lower_filename:
+                    self.model_map["ltx-2.3-distilled"] = model_filename
             
             # Map specific model names
             model_name_map = {

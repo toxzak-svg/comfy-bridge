@@ -1,0 +1,95 @@
+{
+  "_bridge": {
+    "version": 1,
+    "name": "LTX 2.3 T2V",
+    "media_type": "video",
+    "supports_negative": true,
+    "nodes": {
+      "prompt": "2",
+      "negative_prompt": "3",
+      "sampler": "6",
+      "latent": "5",
+      "video_latent": "5",
+      "output": "8",
+      "checkpoint": "1",
+      "fps": "4"
+    },
+    "fields": {
+      "prompt": "text",
+      "negative_prompt": "text",
+      "seed": "seed",
+      "width": "width",
+      "height": "height",
+      "steps": "steps",
+      "cfg": "cfg",
+      "fps": "frame_rate",
+      "ckpt_name": "ckpt_name"
+    }
+  },
+  "1": {
+    "inputs": {
+      "ckpt_name": "ltx-2.3-22b-dev-fp8.safetensors"
+    },
+    "class_type": "CheckpointLoaderSimple"
+  },
+  "2": {
+    "inputs": {
+      "text": "A cinematic shot of a person walking through a futuristic city with neon lights",
+      "clip": ["1", 1]
+    },
+    "class_type": "CLIPTextEncode"
+  },
+  "3": {
+    "inputs": {
+      "text": "",
+      "clip": ["1", 1]
+    },
+    "class_type": "CLIPTextEncode"
+  },
+  "4": {
+    "inputs": {
+      "positive": ["2", 0],
+      "negative": ["3", 0],
+      "frame_rate": 24.0
+    },
+    "class_type": "LTXVConditioning"
+  },
+  "5": {
+    "inputs": {
+      "width": 768,
+      "height": 512,
+      "length": 481,
+      "batch_size": 1
+    },
+    "class_type": "EmptyLTXVLatentVideo"
+  },
+  "6": {
+    "inputs": {
+      "seed": 42,
+      "steps": 16,
+      "cfg": 3.0,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1.0,
+      "model": ["1", 0],
+      "positive": ["4", 0],
+      "negative": ["4", 1],
+      "latent_image": ["5", 0]
+    },
+    "class_type": "KSampler"
+  },
+  "7": {
+    "inputs": {
+      "samples": ["6", 0],
+      "vae": ["1", 2]
+    },
+    "class_type": "VAEDecode"
+  },
+  "8": {
+    "inputs": {
+      "filename_prefix": "aipg_ltx23",
+      "images": ["7", 0]
+    },
+    "class_type": "SaveImage"
+  }
+}
