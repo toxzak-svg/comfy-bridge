@@ -5,7 +5,13 @@
 set -e
 cd "$(dirname "$0")"
 
-# Load AIPG_API_KEY and other vars from home .env if present (job worker config)
+# Load bridge .env first (WORKFLOW_LTX_FILE, etc.), then home .env (AIPG_API_KEY, etc.)
+if [ -f ".env" ]; then
+  set -a
+  # shellcheck source=/dev/null
+  . "./.env"
+  set +a
+fi
 if [ -f "${HOME}/.env" ]; then
   set -a
   # shellcheck source=/dev/null
@@ -22,8 +28,14 @@ fi
 WORKFLOW="${WORKFLOW_FILE:-turbovision.json}"
 LTX_WORKFLOW="${WORKFLOW_LTX_FILE:-}"
 LTX_I2V_WORKFLOW="${WORKFLOW_LTX_I2V_FILE:-}"
-if [ -n "$LTX_WORKFLOW" ] || [ -f "workflows/ltx_2_3_t2v.json" ]; then
-  LTX_WORKFLOW="${LTX_WORKFLOW:-ltx_2_3_t2v.json}"
+if [ -n "$LTX_WORKFLOW" ] || [ -f "workflows/ltx_2_3_t2v.json" ] || [ -f "workflows/ltx_2_3_t2v_multigpu.json" ]; then
+  if [ -z "$LTX_WORKFLOW" ]; then
+    if [ -f "workflows/ltx_2_3_t2v_multigpu.json" ]; then
+      LTX_WORKFLOW="ltx_2_3_t2v_multigpu.json"
+    else
+      LTX_WORKFLOW="ltx_2_3_t2v.json"
+    fi
+  fi
   EXTRA_ARGS="--workflow-ltx $LTX_WORKFLOW"
   if [ -n "$LTX_I2V_WORKFLOW" ] || [ -f "workflows/ltx_2_3_i2v_createvideo_multigpu_comfyorg.json" ] || [ -f "workflows/ltx_2_3_i2v.json" ]; then
     if [ -z "$LTX_I2V_WORKFLOW" ]; then

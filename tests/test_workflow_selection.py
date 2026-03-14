@@ -74,3 +74,34 @@ class TestWorkflowSelection:
         assert getattr(job, "media_type", None) in (None, "image")
         workflow = bridge_image_only._convert_job_to_workflow(job)
         assert "_bridge" not in workflow
+
+    def test_i2v_job_uses_i2v_template_when_configured(self, workflow_dir, video_job):
+        """Video job with source_image and source_processing=img2video uses I2V workflow."""
+        bridge = ComfyUIBridge(
+            worker_name="t",
+            api_key="k",
+            workflow_dir=workflow_dir,
+            workflow_file="turbovision.json",
+            workflow_video_file="ltx_2_3_t2v.json",
+            workflow_video_i2v_file="ltx_2_3_i2v_createvideo_multigpu_comfyorg.json",
+        )
+        bridge.workflow_template = {"_bridge": {}}
+        bridge._load_video_workflow_template()
+        bridge._load_video_i2v_workflow_template()
+        job = DummyJobPopResponse(
+            id="i2v-job",
+            model="ltx-2.3",
+            media_type="video",
+            source_processing="img2video",
+            source_image="iVBORw0KGgo=",  # minimal base64 placeholder
+            payload={"prompt": "Motion", "length": 97, "fps": 24},
+        )
+        workflow = bridge._convert_job_to_workflow(job)
+        assert "_bridge" not in workflow
+        # I2V template has LTXVImgToVideoInplace (image-to-video inplace node)
+        has_i2v_node = any(
+            n.get("class_type") == "LTXVImgToVideoInplace"
+            for n in workflow.values()
+            if isinstance(n, dict)
+        )
+        assert has_i2v_node, "I2V workflow should contain LTXVImgToVideoInplace"

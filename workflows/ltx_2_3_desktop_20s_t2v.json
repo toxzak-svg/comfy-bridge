@@ -1,28 +1,32 @@
 {
   "_bridge": {
     "version": 1,
-    "name": "LTX 2.3 I2V (MultiGPU + Comfy-Org Gemma)",
+    "name": "LTX 2.3 Desktop T2V (20s, dual-GPU)",
     "media_type": "video",
     "supports_negative": true,
     "nodes": {
       "prompt": "3",
       "negative_prompt": "4",
       "sampler": "9",
+      "latent": "6",
       "video_latent": "6",
       "output": "12",
       "checkpoint": "1",
-      "fps": "11",
-      "source_image": "7"
+      "fps": "11"
     },
     "fields": {
       "prompt": "text",
       "negative_prompt": "text",
       "seed": "seed",
+      "width": "width",
+      "height": "height",
       "steps": "steps",
       "cfg": "cfg",
       "fps": "fps",
+      "length": "length",
       "ckpt_name": "ckpt_name"
-    }
+    },
+    "description": "Text-to-video up to 20 seconds. Length 481 frames = 20s @ 24fps (LTX uses 8n+1). Other durations: 5s=121, 10s=241, 15s=361."
   },
   "1": {
     "inputs": {
@@ -32,14 +36,14 @@
   },
   "2": {
     "inputs": {
-      "text_encoder": "gemma_3_12B_it_fp4_mixed.safetensors",
+      "text_encoder": "gemma-3-12b-it-qat-q4_0-unquantized/model-00001-of-00005.safetensors",
       "ckpt_name": "LTX-Video/ltx-2.3-22b-distilled.safetensors"
     },
     "class_type": "LTXV2AVTextEncoderLoaderMultiGPU"
   },
   "3": {
     "inputs": {
-      "text": "Smooth motion, subtle movement, cinematic",
+      "text": "A cinematic shot of a person walking through a futuristic city with neon lights",
       "clip": ["2", 0]
     },
     "class_type": "CLIPTextEncode"
@@ -68,26 +72,10 @@
     },
     "class_type": "EmptyLTXVLatentVideo"
   },
-  "7": {
-    "inputs": {
-      "image": "input.png"
-    },
-    "class_type": "LoadImage"
-  },
-  "8": {
-    "inputs": {
-      "strength": 1,
-      "bypass": false,
-      "vae": ["1", 1],
-      "image": ["7", 0],
-      "latent": ["6", 0]
-    },
-    "class_type": "LTXVImgToVideoInplace"
-  },
   "9": {
     "inputs": {
       "seed": 42,
-      "steps": 20,
+      "steps": 16,
       "cfg": 3.0,
       "sampler_name": "euler",
       "scheduler": "simple",
@@ -95,7 +83,7 @@
       "model": ["1", 0],
       "positive": ["5", 0],
       "negative": ["5", 1],
-      "latent_image": ["8", 0]
+      "latent_image": ["6", 0]
     },
     "class_type": "KSampler"
   },
@@ -116,7 +104,7 @@
   "12": {
     "inputs": {
       "video": ["11", 0],
-      "filename_prefix": "aipg_ltx23_i2v",
+      "filename_prefix": "ltx23_desktop_t2v",
       "format": "auto",
       "codec": "auto"
     },

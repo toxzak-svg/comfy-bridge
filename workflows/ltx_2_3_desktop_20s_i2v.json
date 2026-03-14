@@ -1,7 +1,7 @@
 {
   "_bridge": {
     "version": 1,
-    "name": "LTX 2.3 I2V (MultiGPU + Comfy-Org Gemma)",
+    "name": "LTX 2.3 Desktop I2V (20s, dual-GPU)",
     "media_type": "video",
     "supports_negative": true,
     "nodes": {
@@ -21,8 +21,10 @@
       "steps": "steps",
       "cfg": "cfg",
       "fps": "fps",
+      "length": "length",
       "ckpt_name": "ckpt_name"
-    }
+    },
+    "description": "Image-to-video up to 20 seconds. Length 481 frames = 20s @ 24fps (LTX uses 8n+1). Other durations: 5s=121, 10s=241, 15s=361."
   },
   "1": {
     "inputs": {
@@ -116,7 +118,7 @@
   "12": {
     "inputs": {
       "video": ["11", 0],
-      "filename_prefix": "aipg_ltx23_i2v",
+      "filename_prefix": "ltx23_desktop_i2v",
       "format": "auto",
       "codec": "auto"
     },

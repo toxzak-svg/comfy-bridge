@@ -46,6 +46,19 @@ class TestBridgeInit:
         )
         assert bridge.grid_video_model == "ltx-2.3"
 
+    def test_grid_video_model_defaults_when_i2v_only_set(self, workflow_dir):
+        """I2V-only config (no T2V workflow) still defaults grid_video_model to ltx-2.3."""
+        bridge = ComfyUIBridge(
+            worker_name="t",
+            api_key="k",
+            workflow_dir=workflow_dir,
+            workflow_file="turbovision.json",
+            workflow_video_i2v_file="ltx_2_3_i2v_createvideo_multigpu_comfyorg.json",
+            grid_video_model=None,
+        )
+        assert bridge.grid_video_model == "ltx-2.3"
+        assert bridge.workflow_i2v_template is not None
+
 
 class TestModelsAdvertising:
     """Video models are added to self.models when video workflow is configured."""
@@ -68,6 +81,22 @@ class TestModelsAdvertising:
         bridge_image_only.workflow_template = {"_bridge": {}}
         await bridge_image_only.initialize_models()
         assert "ltx-2.3" not in bridge_image_only.models
+
+    @pytest.mark.asyncio
+    async def test_i2v_only_adds_video_model_to_available(self, workflow_dir):
+        """When only I2V workflow is configured, ltx-2.3 is still added to available models list."""
+        bridge = ComfyUIBridge(
+            worker_name="t",
+            api_key="k",
+            workflow_dir=workflow_dir,
+            workflow_file="turbovision.json",
+            workflow_video_i2v_file="ltx_2_3_i2v_createvideo_multigpu_comfyorg.json",
+            grid_video_model=None,
+        )
+        await bridge.initialize_models()
+        assert "ltx-2.3" in bridge.models
+        assert bridge.workflow_i2v_template is not None
+        assert bridge.workflow_video_template is None
 
 
 class TestModelsAdvertisingSync:

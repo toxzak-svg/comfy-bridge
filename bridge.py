@@ -150,7 +150,8 @@ class ComfyUIBridge:
         self.grid_model = grid_model
         self.workflow_video_file = workflow_video_file
         self.workflow_video_i2v_file = workflow_video_i2v_file
-        self.grid_video_model = grid_video_model if grid_video_model is not None else ("ltx-2.3" if workflow_video_file else None)
+        # Default grid_video_model when any LTX video workflow (T2V or I2V) is configured
+        self.grid_video_model = grid_video_model if grid_video_model is not None else ("ltx-2.3" if (workflow_video_file or workflow_video_i2v_file) else None)
         if self.grid_model:
             self.models = [self.grid_model]
             logger.info(f"Using specified grid model: {self.grid_model}")
@@ -331,13 +332,14 @@ class ComfyUIBridge:
         if not self.workflow_i2v_template and self.workflow_video_i2v_file:
             self._load_video_i2v_workflow_template()
         
-        # Advertise video model(s) to grid when LTX video workflow is configured
-        if self.workflow_video_template and self.grid_video_model:
+        # Advertise video model(s) to grid when LTX video workflow (T2V and/or I2V) is configured
+        has_video_workflow = self.workflow_video_template or self.workflow_i2v_template
+        if has_video_workflow and self.grid_video_model:
             video_models = [self.grid_video_model] if isinstance(self.grid_video_model, str) else list(self.grid_video_model)
             for m in video_models:
                 if m and m not in self.models:
                     self.models.append(m)
-            logger.info(f"Video workflow configured; advertising video models: {video_models}")
+            logger.info(f"Video workflow configured (T2V and/or I2V); advertising video models: {video_models}")
         # When LTX API URL is set (no ComfyUI video workflow), still advertise video model so grid sends video jobs
         elif self.ltx_base_url:
             video_name = self.grid_video_model if self.grid_video_model else self.ltx_model

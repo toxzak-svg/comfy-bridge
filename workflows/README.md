@@ -41,6 +41,21 @@ The repository includes several pre-made templates:
 - `ltx_2_3_t2v.json` - LTX 2.3 text-to-video (fp8, 20s default, single-GPU)
 - `ltx_2_3_t2v_multigpu.json` - LTX 2.3 text-to-video (distilled, 20s, **dual-GPU**, default for T2V)
 - `ltx_2_3_i2v_createvideo_multigpu.json` - LTX 2.3 image-to-video (multi-GPU, 20s)
+- **`ltx_2_3_desktop_20s_t2v.json`** - LTX Desktop T2V, up to **20 seconds** (dual-GPU)
+- **`ltx_2_3_desktop_20s_i2v.json`** - LTX Desktop I2V, up to **20 seconds** (dual-GPU)
+
+### LTX Desktop & 20-second video
+
+Use the `ltx_2_3_desktop_20s_*` workflows for LTX Desktop or any client that needs **up to 20s** video. Frame count uses LTX’s `8n+1` rule (24 fps):
+
+| Duration | Frames (length) |
+|----------|-----------------|
+| 5 s      | 121             |
+| 10 s     | 241             |
+| 15 s     | 361             |
+| **20 s** | **481** (default) |
+
+Set `WORKFLOW_LTX_FILE=ltx_2_3_desktop_20s_t2v.json` and `WORKFLOW_LTX_I2V_FILE=ltx_2_3_desktop_20s_i2v.json` in `.env` to use these from the bridge.
 
 ### LTX 2.3: speed and dual-GPU
 
@@ -50,6 +65,22 @@ The repository includes several pre-made templates:
   - **T2V**: Default workflow is `ltx_2_3_t2v_multigpu.json` (uses `LTXV2CheckpointLoaderMultiGPU` + distilled checkpoint + Gemma text encoder). Start ComfyUI **without** `--cuda-device` so both GPUs are visible.  
   - **I2V**: `ltx_2_3_i2v_createvideo_multigpu.json` uses the same multi-GPU loaders.  
   Single-GPU T2V: set `WORKFLOW_LTX_FILE=ltx_2_3_t2v.json` (fp8 checkpoint).
+
+### LTX 2.3 I2V models
+
+To run LTX 2.3 **image-to-video** (I2V) you need the distilled checkpoint and the Gemma text encoder in ComfyUI:
+
+1. **Checkpoint**: `models/checkpoints/LTX-Video/ltx-2.3-22b-distilled.safetensors` (Lightricks/LTX-2.3)
+2. **Text encoder**: `models/text_encoders/gemma_3_12B_it_fp4_mixed.safetensors` (Comfy-Org single file with tokenizer; see `workflows/README_LTX_TEXT_ENCODER.md` if you see "invalid tokenizer")
+
+From the **ComfyUI** directory run:
+
+```bash
+pip install huggingface_hub
+python download_ltx_model.py
+```
+
+This downloads the I2V checkpoint and the Gemma encoder (use `--fp8-only` to skip I2V and only get the T2V fp8 checkpoint). The bridge I2V workflow to use is `ltx_2_3_i2v_createvideo_multigpu_comfyorg.json` or `ltx_2_3_i2v_createvideo_multigpu.json`; set `WORKFLOW_LTX_I2V_FILE` in `.env` accordingly.
 
 ## How to Get a Workflow File
 
